@@ -1,0 +1,6 @@
+{
+    "globals": ["minetest", "core", "vector", "ItemStack", "PseudoRandom", "PerlinNoise"],
+    "diagnostics": {
+        "globals": ["minetest", "core", "vector", "ItemStack", "PseudoRandom", "PerlinNoise"]
+    }
+}
