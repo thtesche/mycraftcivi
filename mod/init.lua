@@ -1,11 +1,11 @@
 -- Register the Lumberjack mob
 -- Table to map tree trunks to their respective saplings for smart replanting
 local trunk_to_sapling = {
-    ["civi_core:tree"] = "civi_core:sapling",
-    ["civi_core:acacia_tree"] = "civi_core:acacia_sapling",
-    ["civi_core:aspen_tree"] = "civi_core:aspen_sapling",
-    ["civi_core:jungletree"] = "civi_core:jungle_sapling",
-    ["civi_core:pine_tree"] = "civi_core:pine_sapling",
+    ["default:tree"] = "default:sapling",
+    ["default:acacia_tree"] = "default:acacia_sapling",
+    ["default:aspen_tree"] = "default:aspen_sapling",
+    ["default:jungletree"] = "default:jungle_sapling",
+    ["default:pine_tree"] = "default:pine_sapling",
 }
 
 local lumberjack_count = 0
@@ -14,7 +14,7 @@ local lumberjack_count = 0
 local function find_standing_spot(target_pos)
     -- Kann man physikalisch darin stehen?
     -- Luft, dekorative Flora (walkable=false) und Blaetter = passierbar
-    -- WICHTIG: grass-Gruppe NICHT ausschliessen da civi_core:dirt_with_grass group grass=1 hat!
+    -- WICHTIG: grass-Gruppe NICHT ausschliessen da default:dirt_with_grass group grass=1 hat!
     local function is_passable(name)
         local def = core.registered_nodes[name]
         if not def or not def.walkable then return true end                 -- Luft, Dekogras, etc.
@@ -161,11 +161,8 @@ mobs:register_mob("civi_npc:lumberjack", {
             local tname = target_node.name
             if tname == "ignore" then
                 -- Target is in an unloaded block, wait for it to load
-            elseif tname ~= "civi_storage:chest" and tname ~= "civi_storage:chest_locked" and
-                tname ~= "civi_storage:chest_open" and tname ~= "civi_storage:chest_locked_open" and
-                tname ~= "civi_core:chest" and tname ~= "civi_core:chest_locked" and
-                tname ~= "civi_core:chest_open" and tname ~= "civi_core:chest_locked_open" and
-                tname ~= "default:chest" and tname ~= "default:chest_locked" then
+            elseif tname ~= "default:chest" and tname ~= "default:chest_locked" and
+                tname ~= "default:chest_open" and tname ~= "default:chest_locked_open" then
                 core.log("action", "[civi_npc] ERROR: Chest rejected! Node name was: '" .. tostring(tname) .. "' at " .. core.pos_to_string(self.target_chest))
                 self.target_chest = nil
                 self.stand_target = nil
@@ -195,14 +192,13 @@ mobs:register_mob("civi_npc:lumberjack", {
                         local node = core.get_node(self.target_chest)
                         if not self.original_chest_name then
                             self.original_chest_name = node.name
-                            if node.name == "civi_storage:chest" or node.name == "civi_storage:chest_locked" or
-                                node.name == "civi_core:chest" or node.name == "civi_core:chest_locked" then
+                            if node.name == "default:chest" or node.name == "default:chest_locked" then
                                 core.swap_node(self.target_chest, {
                                     name = node.name .. "_open",
                                     param2 = node
                                         .param2
                                 })
-                                core.sound_play("civi_chest_open",
+                                core.sound_play("default_chest_open",
                                     { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
                             end
                         end
@@ -216,10 +212,10 @@ mobs:register_mob("civi_npc:lumberjack", {
                             local half_wood = math.floor(wood_amount / 2)
                             local boards = half_wood * 4
                             local remaining_wood = wood_amount - half_wood
-                            if boards > 0 then inv:add_item("main", ItemStack("civi_core:wood " .. boards)) end
+                            if boards > 0 then inv:add_item("main", ItemStack("default:wood " .. boards)) end
                             if remaining_wood > 0 then
                                 inv:add_item("main",
-                                    ItemStack("civi_core:tree " .. remaining_wood))
+                                    ItemStack("default:tree " .. remaining_wood))
                             end
                             self.inv.wood = 0
                         end
@@ -239,7 +235,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                                 param2 = node
                                     .param2
                             })
-                            core.sound_play("civi_chest_close",
+                            core.sound_play("default_chest_close",
                                 { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
                             self.original_chest_name = nil
                         end
@@ -305,10 +301,10 @@ mobs:register_mob("civi_npc:lumberjack", {
                                             local stack = ItemStack(item)
                                             local iname = stack:get_name()
                                             local is_sapling = core.get_item_group(iname, "sapling") > 0 or
-                                                iname == "civi_core:sapling" or
-                                                iname == "civi_core:jungle_sapling"
+                                                iname == "default:sapling" or
+                                                iname == "default:jungle_sapling"
 
-                                            if core.get_item_group(iname, "tree") > 0 or iname == "civi_core:tree" then
+                                            if core.get_item_group(iname, "tree") > 0 or iname == "default:tree" then
                                                 self.inv.wood = self.inv.wood + stack:get_count()
                                             elseif is_sapling then
                                                 local name = stack:get_name()
@@ -548,11 +544,8 @@ mobs:register_mob("civi_npc:lumberjack", {
                     local should_log = (now - (self.last_search_log_time or 0)) >= 60
 
                     local chests = core.find_nodes_in_area(cp1, cp2, {
-                        "civi_storage:chest", "civi_storage:chest_locked",
-                        "civi_storage:chest_open", "civi_storage:chest_locked_open",
-                        "civi_core:chest", "civi_core:chest_locked",
-                        "civi_core:chest_open", "civi_core:chest_locked_open",
-                        "default:chest", "default:chest_locked"
+                        "default:chest", "default:chest_locked",
+                        "default:chest_open", "default:chest_locked_open"
                     })
 
                     if should_log then
@@ -657,7 +650,7 @@ mobs:register_mob("civi_npc:lumberjack", {
 -- Spawning rule
 mobs:spawn({
     name = "civi_npc:lumberjack",
-    nodes = { "civi_core:dirt_with_grass" },
+    nodes = { "default:dirt_with_grass" },
     min_light = 10,
     chance = 7000,
     active_object_count = 1,
