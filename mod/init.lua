@@ -17,9 +17,9 @@ local function find_standing_spot(target_pos)
     -- WICHTIG: grass-Gruppe NICHT ausschliessen da default:dirt_with_grass group grass=1 hat!
     local function is_passable(name)
         local def = core.registered_nodes[name]
-        if not def or not def.walkable then return true end                 -- Luft, Dekogras, etc.
+        if not def or not def.walkable then return true end             -- Luft, Dekogras, etc.
         if core.get_item_group(name, "leaves") > 0 then return true end -- Blaetter
-        return false                                                        -- alle anderen walkable=true Bloecke sind solid
+        return false                                                    -- alle anderen walkable=true Bloecke sind solid
     end
 
     -- Echter fester Boden (kein Baumstamm, keine Blaetter)?
@@ -45,7 +45,7 @@ local function find_standing_spot(target_pos)
             local n_here  = core.get_node({ x = cx, y = cy, z = cz }).name
             local n_below = core.get_node({ x = cx, y = cy - 1, z = cz }).name
             local n_above = core.get_node({ x = cx, y = cy + 1, z = cz }).name
-            
+
             if is_passable(n_here) and is_solid_ground(n_below) and is_passable(n_above) then
                 -- Muss von der Seite erreichbar sein (kein 1-Block-Loch, das nur von oben zugaenglich ist)
                 local horizontal_ok = false
@@ -65,96 +65,23 @@ local function find_standing_spot(target_pos)
     return nil
 end
 
-mobs:register_mob("civi_npc:lumberjack", {
-    type = "npc",
-    passive = true,
-    hp_min = 20,
-    hp_max = 20,
-    collisionbox = { -0.3, -0.0, -0.3, 0.3, 1.8, 0.3 },
-    visual = "mesh",
-    mesh = "skinsdb_3d_armor_character_5.b3d",
-    textures = {
-        "blank.png",                 -- Slot 1: 64x32 base
-        "character.farmer_male.png", -- Slot 2: 64x64 overlay/modern
-        "blank.png",                 -- Slot 3: Armor
-        "blank.png"                  -- Slot 4: Wielded item
-    },
-    makes_footstep_sound = true,
-    walk_velocity = 1.5,
-    run_velocity = 3,
-    water_damage = 0,
-    lava_damage = 4,
-    fall_damage = 0,
-    pathfinding = 2,
-    jump_height = 2.0,
-    fear_height = 3,
-    can_leap = true,
-    animation = {
-        speed_normal = 30,
-        speed_run = 30,
-        stand_start = 0,
-        stand_end = 79,
-        walk_start = 168,
-        walk_end = 187,
-        run_start = 168,
-        run_end = 187,
-        punch_start = 189,
-        punch_end = 198,
-    },
 
-    do_custom = function(self, dtime)
-        if not self.inv then
-            lumberjack_count = lumberjack_count + 1
-            self._lumberjack_id = lumberjack_count
-            self.inv = { wood = 0, saplings = {}, items = {} }
-            self.blacklist = {} -- [pos_hash] = expiration_time
-            self.target_failures = 0
-            self._lumberjack_state = "Init"
-            self.last_search_log_time = 0
+local function set_state(self, new_state)
+    local function is_boring(s)
+        return s == "Idle / Return FALSE" or
+            s == "Idle (Waiting for Search)" or
+            (s and s:sub(1, 9) == "Searching")
+    end
+
+    if self._lumberjack_state ~= new_state then
+        if not (is_boring(self._lumberjack_state) and is_boring(new_state)) then
+            core.log("action", "[civi_npc] Lumberjack #" .. self._lumberjack_id .. " State: " ..
+                tostring(self._lumberjack_state) .. " -> " .. new_state)
         end
-        -- Migration guards
-        if not self._lumberjack_id then
-            lumberjack_count = lumberjack_count + 1
-            self._lumberjack_id = lumberjack_count
-        end
-        if type(self.inv.saplings) == "number" then self.inv.saplings = {} end
-        if not self.inv.items then self.inv.items = {} end
-        self.greedy_timer = self.greedy_timer or 0
-        self.blacklist = self.blacklist or {}
-        self.target_failures = self.target_failures or 0
-
-        local function set_state(new_state)
-            local function is_boring(s)
-                return s == "Idle / Return FALSE" or
-                    s == "Idle (Waiting for Search)" or
-                    (s and s:sub(1, 9) == "Searching")
-            end
-
-            if self._lumberjack_state ~= new_state then
-                if not (is_boring(self._lumberjack_state) and is_boring(new_state)) then
-                    core.log("action", "[civi_npc] Lumberjack #" .. self._lumberjack_id .. " State: " ..
-                        tostring(self._lumberjack_state) .. " -> " .. new_state)
-                end
-                self._lumberjack_state = new_state
-            end
-        end
-
-        local pos = self.object:get_pos()
-        if not pos then return false end
-
-        -- === Obstacle Logic removed: handled by pathfinder ===
-
-        self.mobs_takeover_timer = (self.mobs_takeover_timer or 0) - dtime
-        if self.mobs_takeover_timer > 0 then
-            set_state("Mobs API takeover (stuck recovery)")
-            return true
-        end
-
-        local target = self.target_chest or self.stand_target or self.target_tree
-
-        -- ==== 1. BUSY / INTERACTION LOCK ====
-        -- If we are already chopping or delivering, stay stationary and do nothing else.
-
+        self._lumberjack_state = new_state
+    end
+end
+local function lumberjack_chest_interaction(self, dtime, pos)
         -- A. Chest Interaction
         if self.target_chest then
             local target_node = core.get_node(self.target_chest)
@@ -163,7 +90,9 @@ mobs:register_mob("civi_npc:lumberjack", {
                 -- Target is in an unloaded block, wait for it to load
             elseif tname ~= "default:chest" and tname ~= "default:chest_locked" and
                 tname ~= "default:chest_open" and tname ~= "default:chest_locked_open" then
-                core.log("action", "[civi_npc] ERROR: Chest rejected! Node name was: '" .. tostring(tname) .. "' at " .. core.pos_to_string(self.target_chest))
+                core.log("action",
+                    "[civi_npc] ERROR: Chest rejected! Node name was: '" ..
+                    tostring(tname) .. "' at " .. core.pos_to_string(self.target_chest))
                 self.target_chest = nil
                 self.stand_target = nil
             else
@@ -182,7 +111,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                 local dy = math.abs(pos.y - self.target_chest.y)
 
                 if d2d <= 3.5 and dy <= 3.0 then
-                    set_state("Depositing in chest")
+                    set_state(self, "Depositing in chest")
                     self:set_velocity(0)
                     self.path_way = nil
                     self:set_animation("punch")
@@ -249,6 +178,10 @@ mobs:register_mob("civi_npc:lumberjack", {
             end
         end
 
+    return false
+end
+
+local function lumberjack_tree_interaction(self, dtime, pos)
         -- B. Tree Interaction
         if self.target_tree then
             local tnode = core.get_node(self.target_tree)
@@ -273,7 +206,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                 local dist_y = math.abs(pos.y - self.target_tree.y)
 
                 if dist_2d <= 4.0 and dist_y <= 15.0 then
-                    set_state("Chopping tree")
+                    set_state(self, "Chopping tree")
                     self:set_velocity(0)
                     self.path_way = nil
                     self:set_animation("punch")
@@ -337,7 +270,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                                 local mat_pos = { x = hp.x - 1, y = hp.y, z = hp.z }
                                 local mat_node = core.get_node(mat_pos)
                                 local is_soil = core.get_item_group(mat_node.name, "soil") > 0 or
-                                                core.get_item_group(mat_node.name, "dirt") > 0
+                                    core.get_item_group(mat_node.name, "dirt") > 0
                                 if is_soil then
                                     core.set_node(hp, { name = mat_node.name })
                                 end
@@ -368,8 +301,8 @@ mobs:register_mob("civi_npc:lumberjack", {
                                         local pos_below = { x = p_pos.x, y = p_pos.y - 1, z = p_pos.z }
                                         local node_below = core.get_node(pos_below)
                                         local is_soil = core.get_item_group(node_below.name, "soil") > 0 or
-                                                        core.get_item_group(node_below.name, "dirt") > 0
-                                        
+                                            core.get_item_group(node_below.name, "dirt") > 0
+
                                         if is_soil and core.get_node(p_pos).name == "air" then
                                             table.insert(plant_spots, p_pos)
                                             break -- only one sapling per column
@@ -403,7 +336,11 @@ mobs:register_mob("civi_npc:lumberjack", {
             end
         end
 
-        -- ==== 2. PATHFINDING LOGIC ====
+    return false
+end
+
+local function lumberjack_pathfinding(self, dtime, pos, target)
+    if not target then return false end
         target = self.target_chest or self.stand_target or self.target_tree
         if target then
             self.path_timer = (self.path_timer or 0) + dtime
@@ -446,7 +383,7 @@ mobs:register_mob("civi_npc:lumberjack", {
 
         -- Move along the path if it exists
         if target and self.path_way and #self.path_way > 0 then
-            set_state("Moving on path to " .. (self.target_chest and "chest" or "tree"))
+            set_state(self, "Moving on path to " .. (self.target_chest and "chest" or "tree"))
             local next_p = self.path_way[1]
             -- Offset to center of node for actual movement
             local target_wp = { x = next_p.x + 0.5, y = next_p.y, z = next_p.z + 0.5 }
@@ -489,13 +426,15 @@ mobs:register_mob("civi_npc:lumberjack", {
                         -- Wirklich festgesteckt: Pfad neu berechnen und Mobs Redo uebernehmen lassen
                         local next_p = self.path_way[1]
                         local n0 = core.get_node(next_p).name
-                        local n1 = core.get_node({x=next_p.x, y=next_p.y+1, z=next_p.z}).name
-                        local n2 = core.get_node({x=next_p.x, y=next_p.y+2, z=next_p.z}).name
-                        
+                        local n1 = core.get_node({ x = next_p.x, y = next_p.y + 1, z = next_p.z }).name
+                        local n2 = core.get_node({ x = next_p.x, y = next_p.y + 2, z = next_p.z }).name
+
                         core.log("action", "[civi_npc] Path stuck at " .. core.pos_to_string(pos) .. "!")
-                        core.log("action", "[civi_npc] Waypoint " .. core.pos_to_string(next_p) .. " nodes: L0="..n0..", L1="..n1..", L2="..n2)
+                        core.log("action",
+                            "[civi_npc] Waypoint " ..
+                            core.pos_to_string(next_p) .. " nodes: L0=" .. n0 .. ", L1=" .. n1 .. ", L2=" .. n2)
                         core.log("action", "[civi_npc] Handing to Mobs API for 8s for recovery.")
-                        
+
                         self.path_way = nil
                         self.path_timer = 3.1
                         self.target_failures = (self.target_failures or 0) + 1
@@ -508,9 +447,16 @@ mobs:register_mob("civi_npc:lumberjack", {
             end
         end
 
+    if target and self.path_way and #self.path_way > 0 then
+        return true
+    end
+    return false
+end
+
+local function lumberjack_greedy_movement(self, dtime, pos, target)
         -- ==== 1.5 GREEDY FALLBACK MOVEMENT ====
         if target and not self.path_way and (self.greedy_timer or 0) > 0 then
-            set_state("Greedy fallback to " .. (self.target_chest and "chest" or "tree"))
+            set_state(self, "Greedy fallback to " .. (self.target_chest and "chest" or "tree"))
             self.greedy_timer = self.greedy_timer - dtime
             local direction = vector.direction({ x = pos.x, y = 0, z = pos.z }, { x = target.x, y = 0, z = target.z })
             self.object:set_yaw(core.dir_to_yaw(direction))
@@ -533,14 +479,16 @@ mobs:register_mob("civi_npc:lumberjack", {
                     local dir = core.yaw_to_dir(yaw)
                     local front = vector.round(vector.add(pos, dir))
                     local n0 = core.get_node(front).name
-                    local n1 = core.get_node({x=front.x, y=front.y+1, z=front.z}).name
-                    local n2 = core.get_node({x=front.x, y=front.y+2, z=front.z}).name
+                    local n1 = core.get_node({ x = front.x, y = front.y + 1, z = front.z }).name
+                    local n2 = core.get_node({ x = front.x, y = front.y + 2, z = front.z }).name
 
                     core.log("action", "[civi_npc] Greedy stuck at " .. core.pos_to_string(pos) .. "!")
-                    core.log("action", "[civi_npc] Block in front " .. core.pos_to_string(front) .. " nodes: L0="..n0..", L1="..n1..", L2="..n2)
+                    core.log("action",
+                        "[civi_npc] Block in front " ..
+                        core.pos_to_string(front) .. " nodes: L0=" .. n0 .. ", L1=" .. n1 .. ", L2=" .. n2)
                     core.log("action", "[civi_npc] Handing to Mobs API for 8s for recovery.")
 
-                    self.greedy_timer = 0    -- Stop greedy
+                    self.greedy_timer = 0 -- Stop greedy
                     self.target_failures = (self.target_failures or 0) + 1
                     self.mobs_takeover_timer = 8.0
                 end
@@ -549,6 +497,13 @@ mobs:register_mob("civi_npc:lumberjack", {
             end
         end
 
+    if target and not self.path_way and (self.greedy_timer or 0) > 0 then
+        return true
+    end
+    return false
+end
+
+local function lumberjack_search_logic(self, dtime, pos)
         -- ==== 3. SEARCH LOGIC (Tree or Chest) ====
         self.search_timer = (self.search_timer or 0) + dtime
         if not self.target_tree and not self.target_chest then
@@ -557,7 +512,7 @@ mobs:register_mob("civi_npc:lumberjack", {
 
                 -- 1. CHEST SEARCH (Priority if we have wood)
                 if self.inv.wood > 0 then
-                    set_state("Searching for chest (Wood: " .. tostring(self.inv.wood) .. ")")
+                    set_state(self, "Searching for chest (Wood: " .. tostring(self.inv.wood) .. ")")
                     local crange = 110
                     local cp1 = { x = pos.x - crange, y = pos.y - crange, z = pos.z - crange }
                     local cp2 = { x = pos.x + crange, y = pos.y + crange, z = pos.z + crange }
@@ -570,7 +525,9 @@ mobs:register_mob("civi_npc:lumberjack", {
                     })
 
                     if should_log then
-                        core.log("action", "[civi_npc] Lumberjack #" .. self._lumberjack_id .. " Chest search: found " .. #chests .. " chests")
+                        core.log("action",
+                            "[civi_npc] Lumberjack #" ..
+                            self._lumberjack_id .. " Chest search: found " .. #chests .. " chests")
                         self.last_search_log_time = now
                     end
                     if #chests > 0 then
@@ -589,11 +546,12 @@ mobs:register_mob("civi_npc:lumberjack", {
                                     self.target_chest = chest_pos
                                     self.stand_target = stand_spot
                                     self.path_timer = 3.1
-                                    set_state("Moving to chest at " .. core.pos_to_string(chest_pos))
+                                    set_state(self, "Moving to chest at " .. core.pos_to_string(chest_pos))
                                     return true
                                 else
                                     self.blacklist[hash] = core.get_gametime() + 60
-                                    core.log("action", "[civi_npc] Blacklisted unreachable chest at " .. core.pos_to_string(chest_pos))
+                                    core.log("action",
+                                        "[civi_npc] Blacklisted unreachable chest at " .. core.pos_to_string(chest_pos))
                                 end
                             end
                         end
@@ -602,7 +560,7 @@ mobs:register_mob("civi_npc:lumberjack", {
 
                 -- 2. TREE SEARCH (Only if we have no wood)
                 if self.inv.wood == 0 then
-                    set_state("Searching for tree (Wood: 0)")
+                    set_state(self, "Searching for tree (Wood: 0)")
                     local range = 100
                     local p1 = { x = pos.x - range, y = pos.y - range, z = pos.z - range }
                     local p2 = { x = pos.x + range, y = pos.y + range, z = pos.z + range }
@@ -647,7 +605,9 @@ mobs:register_mob("civi_npc:lumberjack", {
                                 return true
                             else
                                 self.blacklist[core.hash_node_position(found_root)] = core.get_gametime() + 300
-                                core.log("action", "[civi_npc] Blacklisted unreachable tree at " .. found_root.x .. "," .. found_root.y .. "," .. found_root.z)
+                                core.log("action",
+                                    "[civi_npc] Blacklisted unreachable tree at " ..
+                                    found_root.x .. "," .. found_root.y .. "," .. found_root.z)
                             end
                         end
                     end
@@ -656,14 +616,93 @@ mobs:register_mob("civi_npc:lumberjack", {
             end
             -- Only set Idle state if we are actually doing nothing and not waiting for the search timer
             if self.search_timer < 0.9 then
-                set_state("Idle (Waiting for Search)")
+                set_state(self, "Idle (Waiting for Search)")
             else
-                set_state("Idle / Return FALSE")
+                set_state(self, "Idle / Return FALSE")
             end
             return false
         end
+        return false
+end
 
-        -- Default fallback: execute normal Mobs AI if custom logic is done for this tick
+mobs:register_mob("civi_npc:lumberjack", {
+    type = "npc",
+    passive = true,
+    hp_min = 20,
+    hp_max = 20,
+    collisionbox = { -0.3, -0.0, -0.3, 0.3, 1.8, 0.3 },
+    visual = "mesh",
+    mesh = "skinsdb_3d_armor_character_5.b3d",
+    textures = {
+        "blank.png",                 -- Slot 1: 64x32 base
+        "character.farmer_male.png", -- Slot 2: 64x64 overlay/modern
+        "blank.png",                 -- Slot 3: Armor
+        "blank.png"                  -- Slot 4: Wielded item
+    },
+    makes_footstep_sound = true,
+    walk_velocity = 1.5,
+    run_velocity = 3,
+    water_damage = 0,
+    lava_damage = 4,
+    fall_damage = 0,
+    pathfinding = 2,
+    jump_height = 2.0,
+    fear_height = 3,
+    can_leap = true,
+    animation = {
+        speed_normal = 30,
+        speed_run = 30,
+        stand_start = 0,
+        stand_end = 79,
+        walk_start = 168,
+        walk_end = 187,
+        run_start = 168,
+        run_end = 187,
+        punch_start = 189,
+        punch_end = 198,
+    },
+
+    do_custom = function(self, dtime)
+        if not self.inv then
+            lumberjack_count = lumberjack_count + 1
+            self._lumberjack_id = lumberjack_count
+            self.inv = { wood = 0, saplings = {}, items = {} }
+            self.blacklist = {} -- [pos_hash] = expiration_time
+            self.target_failures = 0
+            self._lumberjack_state = "Init"
+            self.last_search_log_time = 0
+        end
+        if not self._lumberjack_id then
+            lumberjack_count = lumberjack_count + 1
+            self._lumberjack_id = lumberjack_count
+        end
+        if type(self.inv.saplings) == "number" then self.inv.saplings = {} end
+        if not self.inv.items then self.inv.items = {} end
+        self.greedy_timer = self.greedy_timer or 0
+        self.blacklist = self.blacklist or {}
+        self.target_failures = self.target_failures or 0
+
+        local pos = self.object:get_pos()
+        if not pos then return false end
+
+        self.mobs_takeover_timer = (self.mobs_takeover_timer or 0) - dtime
+        if self.mobs_takeover_timer > 0 then
+            set_state(self, "Mobs API takeover (stuck recovery)")
+            return true
+        end
+
+        if lumberjack_chest_interaction(self, dtime, pos) then return true end
+        if lumberjack_tree_interaction(self, dtime, pos) then return true end
+
+        local target = self.target_chest or self.stand_target or self.target_tree
+        if target then
+            if lumberjack_pathfinding(self, dtime, pos, target) then return true end
+            if lumberjack_greedy_movement(self, dtime, pos, target) then return true end
+            return true
+        end
+
+        if lumberjack_search_logic(self, dtime, pos) then return true end
+
         return true
     end,
 })
@@ -680,4 +719,4 @@ mobs:spawn({
 
 
 -- Spawn egg for the inventory
-mobs:register_egg("civi_npc:lumberjack", "Lumberjack (myCraftCivi)", "civi_wood.png", 1)
+mobs:register_egg("civi_npc:lumberjack", "Lumberjack (myCraftCivi)", "civi_lumberjack_spawner.png", 1)
