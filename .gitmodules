@@ -1,0 +1,3 @@
+[submodule ".reference_games/minetest_game"]
+	path = .reference_games/minetest_game
+	url = https://github.com/luanti-org/minetest_game/
