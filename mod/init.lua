@@ -280,6 +280,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                     self.chopping_timer = (self.chopping_timer or 0) + dtime
                     if self.chopping_timer > 2.0 then
                         self.chopping_timer = 0
+                        local removed_trunks = {}
                         for y_offset = -1, 30 do
                             for x_offset = -3, 3 do
                                 for z_offset = -3, 3 do
@@ -296,6 +297,9 @@ mobs:register_mob("civi_npc:lumberjack", {
                                         0 -- Includes apples
 
                                     if is_tree or is_leaves or is_fruit then
+                                        if is_tree then
+                                            table.insert(removed_trunks, check_pos)
+                                        end
                                         local drops = core.get_node_drops(node.name, "")
                                         for _, item in ipairs(drops) do
                                             local stack = ItemStack(item)
@@ -327,6 +331,19 @@ mobs:register_mob("civi_npc:lumberjack", {
                             end
                         end
 
+                        -- Fill root holes if they are in the ground
+                        for _, hp in ipairs(removed_trunks) do
+                            if core.get_node(hp).name == "air" then
+                                local mat_pos = { x = hp.x - 1, y = hp.y, z = hp.z }
+                                local mat_node = core.get_node(mat_pos)
+                                local is_soil = core.get_item_group(mat_node.name, "soil") > 0 or
+                                                core.get_item_group(mat_node.name, "dirt") > 0
+                                if is_soil then
+                                    core.set_node(hp, { name = mat_node.name })
+                                end
+                            end
+                        end
+
                         -- 1. Identify all available saplings in inventory
                         local available_saplings = {}
                         for s_name, count in pairs(self.inv.saplings) do
@@ -341,18 +358,22 @@ mobs:register_mob("civi_npc:lumberjack", {
                             local plant_spots = {}
                             for dx = -2, 2 do
                                 for dz = -2, 2 do
-                                    local p_pos = {
-                                        x = self.target_tree.x + dx,
-                                        y = self.target_tree.y,
-                                        z = self.target_tree.z + dz
-                                    }
-                                    local pos_below = { x = p_pos.x, y = p_pos.y - 1, z = p_pos.z }
-                                    local node_below = core.get_node(pos_below)
-                                    local is_soil = core.get_item_group(node_below.name, "soil") > 0 or
-                                                    core.get_item_group(node_below.name, "dirt") > 0
-                                    
-                                    if is_soil and core.get_node(p_pos).name == "air" then
-                                        table.insert(plant_spots, p_pos)
+                                    -- Check slightly above and below to handle filled root holes and uneven terrain
+                                    for dy = 1, -1, -1 do
+                                        local p_pos = {
+                                            x = self.target_tree.x + dx,
+                                            y = self.target_tree.y + dy,
+                                            z = self.target_tree.z + dz
+                                        }
+                                        local pos_below = { x = p_pos.x, y = p_pos.y - 1, z = p_pos.z }
+                                        local node_below = core.get_node(pos_below)
+                                        local is_soil = core.get_item_group(node_below.name, "soil") > 0 or
+                                                        core.get_item_group(node_below.name, "dirt") > 0
+                                        
+                                        if is_soil and core.get_node(p_pos).name == "air" then
+                                            table.insert(plant_spots, p_pos)
+                                            break -- only one sapling per column
+                                        end
                                     end
                                 end
                             end
