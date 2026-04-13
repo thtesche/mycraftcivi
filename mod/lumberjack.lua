@@ -55,14 +55,18 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                 local time = core.get_timeofday() or 0.5
                 local is_night = (time > 0.76 or time < 0.24)
                 
-                local is_empty_inv = ((self.inv.wood or 0) == 0)
-                if is_empty_inv then
-                    for _, v in pairs(self.inv.items) do if v > 0 then is_empty_inv = false; break end end
-                    for _, v in pairs(self.inv.saplings) do if v > 0 then is_empty_inv = false; break end end
+                local total_saplings = 0
+                for _, count in pairs(self.inv.saplings) do
+                    total_saplings = total_saplings + count
                 end
 
+                local has_chest_task = false
+                if (self.inv.wood or 0) > 0 then has_chest_task = true end
+                for _, v in pairs(self.inv.items) do if v > 0 then has_chest_task = true; break end end
+                if total_saplings ~= 50 then has_chest_task = true end
+
                 if self.chest_wait_timer and self.chest_wait_timer > 0 then
-                    if is_empty_inv and is_night then
+                    if not has_chest_task and is_night then
                         self.chest_wait_timer = 4.0 -- Keep checking later
                     end
                     self.chest_wait_timer = self.chest_wait_timer - dtime
@@ -71,7 +75,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                     return true
                 end
 
-                if is_empty_inv and is_night then
+                if not has_chest_task and is_night then
                     self:set_animation("stand")
                     set_state(self, "Waiting for morning")
                     self.chest_wait_timer = 5.0
