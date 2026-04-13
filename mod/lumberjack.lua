@@ -52,6 +52,32 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             local dy = math.abs(pos.y - self.target_chest.y)
 
             if d2d <= 2.5 and dy <= 3.0 then
+                local time = core.get_timeofday() or 0.5
+                local is_night = (time > 0.76 or time < 0.24)
+                
+                local is_empty_inv = ((self.inv.wood or 0) == 0)
+                if is_empty_inv then
+                    for _, v in pairs(self.inv.items) do if v > 0 then is_empty_inv = false; break end end
+                    for _, v in pairs(self.inv.saplings) do if v > 0 then is_empty_inv = false; break end end
+                end
+
+                if self.chest_wait_timer and self.chest_wait_timer > 0 then
+                    if is_empty_inv and is_night then
+                        self.chest_wait_timer = 4.0 -- Keep checking later
+                    end
+                    self.chest_wait_timer = self.chest_wait_timer - dtime
+                    self:set_animation("stand")
+                    set_state(self, "Waiting (" .. tostring(math.ceil(self.chest_wait_timer)) .. "s)")
+                    return true
+                end
+
+                if is_empty_inv and is_night then
+                    self:set_animation("stand")
+                    set_state(self, "Waiting for morning")
+                    self.chest_wait_timer = 5.0
+                    return true
+                end
+
                 set_state(self, "Depositing in chest")
                 self:set_velocity(0)
                 self.path_way = nil
@@ -75,16 +101,30 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                 if self.deposit_timer >= 2.0 then
                     local meta = core.get_meta(self.target_chest)
                     local inv = meta:get_inventory()
-                    local wood_amount = (self.inv.wood or 0)
+                    local leftovers = false
 
+                    local wood_amount = (self.inv.wood or 0)
                     if wood_amount > 0 then
                         -- Holz verarbeiten: Häfte wird zu Brettern
                         local half_wood = math.floor(wood_amount / 2)
                         local boards = half_wood * 4
                         local remaining_wood = wood_amount - half_wood
-                        if boards > 0 then inv:add_item("main", ItemStack("default:wood " .. boards)) end
-                        if remaining_wood > 0 then inv:add_item("main", ItemStack("default:tree " .. remaining_wood)) end
-                        self.inv.wood = 0
+
+                        local left_boards_count = 0
+                        local left_wood_count = 0
+
+                        if boards > 0 then
+                            local l = inv:add_item("main", ItemStack("default:wood " .. boards))
+                            left_boards_count = l:get_count()
+                        end
+                        if remaining_wood > 0 then
+                            local l = inv:add_item("main", ItemStack("default:tree " .. remaining_wood))
+                            left_wood_count = l:get_count()
+                        end
+                        
+                        local restored_wood = left_wood_count + math.ceil(left_boards_count / 4)
+                        self.inv.wood = restored_wood
+                        if restored_wood > 0 then leftovers = true end
                     end
 
                     -- Sonstige Items (Äpfel, sticks etc.) ablegen
@@ -96,9 +136,21 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                                 core.get_item_group(name, "flora") > 0
 
                             if not is_trash then
-                                inv:add_item("main", ItemStack(name .. " " .. count))
+                                local l = inv:add_item("main", ItemStack(name .. " " .. count))
+                                self.inv.items[name] = l:get_count()
+                                if l:get_count() > 0 then leftovers = true end
+                            else
+                                self.inv.items[name] = 0
                             end
-                            self.inv.items[name] = 0
+                        end
+                    end
+
+                    -- Setzlinge ablegen
+                    for name, count in pairs(self.inv.saplings) do
+                        if count > 0 then
+                            local l = inv:add_item("main", ItemStack(name .. " " .. count))
+                            self.inv.saplings[name] = l:get_count()
+                            if l:get_count() > 0 then leftovers = true end
                         end
                     end
 
@@ -111,10 +163,15 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                         self.original_chest_name = nil
                     end
 
-                    self.target_chest = nil
-                    self.stand_target = nil
                     self.deposit_timer = 0
-                    self.search_timer = 1.0
+                    if leftovers then
+                        self.chest_wait_timer = 60.0
+                    else
+                        self.chest_wait_timer = nil
+                        self.target_chest = nil
+                        self.stand_target = nil
+                        self.search_timer = 1.0
+                    end
                 end
                 return true
             end
@@ -471,9 +528,11 @@ local function lumberjack_search_logic(self, dtime, pos)
         if self.search_timer >= 1.0 then
             self.search_timer = 0
 
-            -- 1. TRUHEN-SUCHE (Priorität falls wir Holz haben)
-            -- 1. TRUHEN-SUCHE (Priorität falls wir mind. 99 Holz haben)
-            if (self.inv.wood or 0) >= 99 then
+            local time = core.get_timeofday() or 0.5
+            local is_night = (time > 0.76 or time < 0.24)
+
+            -- 1. TRUHEN-SUCHE (Priorität falls wir Holz haben oder Nacht ist)
+            if is_night or (self.inv.wood or 0) >= 99 then
                 set_state(self, "Searching for chest (Wood: " .. tostring(self.inv.wood) .. ")")
                 local range = 110
                 local chests = core.find_nodes_in_area(
@@ -502,9 +561,8 @@ local function lumberjack_search_logic(self, dtime, pos)
                 end
             end
 
-            -- 2. BAUM-SUCHE (Falls wir kein Holz haben)
-            -- 2. BAUM-SUCHE (Falls wir weniger als 99 Holz haben)
-            if (self.inv.wood or 0) < 99 then
+            -- 2. BAUM-SUCHE (Falls wir weniger als 99 Holz haben und Tag ist)
+            if not is_night and (self.inv.wood or 0) < 99 then
                 set_state(self, "Searching for tree (Wood: " .. tostring(self.inv.wood) .. ")")
                 local range = 100
                 local found_nodes = core.find_nodes_in_area(
