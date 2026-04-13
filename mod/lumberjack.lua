@@ -18,11 +18,11 @@ end
 
 local function get_soil_y(x, z, start_y)
     for dy = 5, -5, -1 do
-        local p = {x=x, y=start_y + dy, z=z}
+        local p = { x = x, y = start_y + dy, z = z }
         local name = core.get_node(p).name
-        if core.get_item_group(name, "soil") > 0 or 
-           core.get_item_group(name, "dirt") > 0 or 
-           core.get_item_group(name, "sand") > 0 then
+        if core.get_item_group(name, "soil") > 0 or
+            core.get_item_group(name, "dirt") > 0 or
+            core.get_item_group(name, "sand") > 0 then
             return p.y
         end
     end
@@ -35,7 +35,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
     if self.target_chest then
         local target_node = core.get_node(self.target_chest)
         local tname = target_node.name
-        
+
         if tname == "ignore" then
             -- Block nicht geladen, warten.
         elseif tname ~= "default:chest" and tname ~= "default:chest_locked" and
@@ -45,11 +45,13 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             self.stand_target = nil
         else
             -- Distanzprüfung zur Truhe
-            local chest_center = { x = self.target_chest.x + 0.5, y = self.target_chest.y + 0.5, z = self.target_chest.z + 0.5 }
-            local d2d = vector.distance({ x = pos.x, y = 0, z = pos.z }, { x = chest_center.x, y = 0, z = chest_center.z })
+            local chest_center = { x = self.target_chest.x + 0.5, y = self.target_chest.y + 0.5, z = self.target_chest.z +
+            0.5 }
+            local d2d = vector.distance({ x = pos.x, y = 0, z = pos.z },
+                { x = chest_center.x, y = 0, z = chest_center.z })
             local dy = math.abs(pos.y - self.target_chest.y)
 
-            if d2d <= 3.5 and dy <= 3.0 then
+            if d2d <= 2.5 and dy <= 3.0 then
                 set_state(self, "Depositing in chest")
                 self:set_velocity(0)
                 self.path_way = nil
@@ -63,7 +65,8 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                         self.original_chest_name = node.name
                         if node.name == "default:chest" or node.name == "default:chest_locked" then
                             core.swap_node(self.target_chest, { name = node.name .. "_open", param2 = node.param2 })
-                            core.sound_play("default_chest_open", { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
+                            core.sound_play("default_chest_open",
+                                { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
                         end
                     end
                 end
@@ -73,7 +76,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                     local meta = core.get_meta(self.target_chest)
                     local inv = meta:get_inventory()
                     local wood_amount = (self.inv.wood or 0)
-                    
+
                     if wood_amount > 0 then
                         -- Holz verarbeiten: Häfte wird zu Brettern
                         local half_wood = math.floor(wood_amount / 2)
@@ -89,9 +92,9 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                         if count > 0 then
                             -- Müll-Filter: Blätter, Gras und Blumen werden entsorgt statt eingelagert
                             local is_trash = core.get_item_group(name, "leaves") > 0 or
-                                             core.get_item_group(name, "grass") > 0 or
-                                             core.get_item_group(name, "flora") > 0
-                            
+                                core.get_item_group(name, "grass") > 0 or
+                                core.get_item_group(name, "flora") > 0
+
                             if not is_trash then
                                 inv:add_item("main", ItemStack(name .. " " .. count))
                             end
@@ -103,10 +106,11 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                     if self.original_chest_name then
                         local node = core.get_node(self.target_chest)
                         core.swap_node(self.target_chest, { name = self.original_chest_name, param2 = node.param2 })
-                        core.sound_play("default_chest_close", { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
+                        core.sound_play("default_chest_close",
+                            { pos = self.target_chest, gain = 0.3, max_hear_distance = 10 })
                         self.original_chest_name = nil
                     end
-                    
+
                     self.target_chest = nil
                     self.stand_target = nil
                     self.deposit_timer = 0
@@ -122,7 +126,7 @@ end
 local function get_connected_wood(pos, max_nodes)
     local visited = {}
     local nodes = {}
-    local queue = {pos}
+    local queue = { pos }
     local root = vector.new(pos)
     local min_y = pos.y
 
@@ -149,7 +153,7 @@ local function get_connected_wood(pos, max_nodes)
             for dy = -1, 1 do
                 for dz = -1, 1 do
                     if dx ~= 0 or dy ~= 0 or dz ~= 0 then
-                        local np = {x = p.x + dx, y = p.y + dy, z = p.z + dz}
+                        local np = { x = p.x + dx, y = p.y + dy, z = p.z + dz }
                         local hash = pos_to_hash(np)
                         if not visited[hash] then
                             local name = core.get_node(np).name
@@ -178,17 +182,19 @@ local function lumberjack_tree_interaction(self, dtime, pos)
             self.target_tree = nil
             self.stand_target = nil
         else
-            local tree_center = { x = self.target_tree.x + 0.5, y = self.target_tree.y + 0.5, z = self.target_tree.z + 0.5 }
-            local dist_2d = vector.distance({ x = pos.x, y = 0, z = pos.z }, { x = tree_center.x, y = 0, z = tree_center.z })
+            local tree_center = { x = self.target_tree.x + 0.5, y = self.target_tree.y + 0.5, z = self.target_tree.z +
+            0.5 }
+            local dist_2d = vector.distance({ x = pos.x, y = 0, z = pos.z },
+                { x = tree_center.x, y = 0, z = tree_center.z })
             local dist_y = math.abs(pos.y - self.target_tree.y)
 
-            if dist_2d <= 4.0 and dist_y <= 15.0 then
+            if dist_2d <= 3.0 and dist_y <= 15.0 then
                 set_state(self, "Chopping tree")
                 self:set_velocity(0)
                 self.path_way = nil
                 self:set_animation("punch")
                 self.chopping_timer = (self.chopping_timer or 0) + dtime
-                
+
                 if self.chopping_timer > 2.0 then
                     self.chopping_timer = 0
 
@@ -220,8 +226,8 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                     if root_pos then
                         local fill_mat = "default:dirt"
                         local neighbor_offsets = {
-                            {x=1,y=0,z=0}, {x=-1,y=0,z=0}, {x=0,y=0,z=1}, {x=0,y=0,z=-1}, 
-                            {x=0,y=-1,z=0}, {x=1,y=-1,z=0}, {x=-1,y=-1,z=0}, {x=0,y=-1,z=1}, {x=0,y=-1,z=-1}
+                            { x = 1, y = 0, z = 0 }, { x = -1, y = 0, z = 0 }, { x = 0, y = 0, z = 1 }, { x = 0, y = 0, z = -1 },
+                            { x = 0, y = -1, z = 0 }, { x = 1, y = -1, z = 0 }, { x = -1, y = -1, z = 0 }, { x = 0, y = -1, z = 1 }, { x = 0, y = -1, z = -1 }
                         }
                         for _, moff in ipairs(neighbor_offsets) do
                             local npos = vector.add(root_pos, moff)
@@ -283,7 +289,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                             local sx = self.target_tree.x + cand.dx
                             local sz = self.target_tree.z + cand.dz
                             local sy = get_soil_y(sx, sz, self.target_tree.y)
-                            
+
                             if sy then
                                 -- Loch-Check: Sind mindestens 6 Nachbarn höher?
                                 local higher_neighbors = 0
@@ -329,7 +335,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                             end
                         end
                     end
-                    ]]--
+                    ]] --
 
                     self.target_tree = nil
                     self.stand_target = nil
@@ -345,7 +351,7 @@ end
 --- Bewegungslogik entlang eines Pfades (A* Pathfinding).
 local function lumberjack_pathfinding(self, dtime, pos, target)
     if not target then return false end
-    
+
     self.path_timer = (self.path_timer or 0) + dtime
 
     -- Falls das Ziel sich geändert hat, Pfad zurücksetzen
@@ -394,7 +400,8 @@ local function lumberjack_pathfinding(self, dtime, pos, target)
             self.last_pos = nil
             if #self.path_way == 0 then self:set_velocity(0) end
         else
-            local direction = vector.direction({ x = pos.x, y = 0, z = pos.z }, { x = target_wp.x, y = 0, z = target_wp.z })
+            local direction = vector.direction({ x = pos.x, y = 0, z = pos.z },
+                { x = target_wp.x, y = 0, z = target_wp.z })
             self.object:set_yaw(core.dir_to_yaw(direction))
             self:set_velocity(self.walk_velocity)
             self:set_animation("walk")
@@ -514,7 +521,9 @@ local function lumberjack_search_logic(self, dtime, pos)
                         local under = { x = check_pos.x, y = check_pos.y - 1, z = check_pos.z }
                         if core.get_item_group(core.get_node(under).name, "tree") > 0 then
                             check_pos.y = check_pos.y - 1
-                        else break end
+                        else
+                            break
+                        end
                     end
                     local hash = core.hash_node_position(check_pos)
                     if not self.blacklist[hash] or self.blacklist[hash] < now then
@@ -566,7 +575,7 @@ mobs:register_mob("civi_npc:lumberjack", {
         "blank.png",                 -- Slot 1: 64x32 base
         "character.farmer_male.png", -- Slot 2: 64x64 overlay
         "blank.png",                 -- Slot 3: Armor
-        "blank.png"                  -- Slot 4: Wielded item
+        "default_tool_steelaxe.png"  -- Slot 4: Wielded item
     },
     makes_footstep_sound = true,
     walk_velocity = 1.5,
@@ -602,7 +611,7 @@ mobs:register_mob("civi_npc:lumberjack", {
             self._lumberjack_state = "Init"
             self.last_search_log_time = 0
         end
-        
+
         -- Sicherstellen, dass IDs und Tabellen existieren (z.B. nach Reload)
         if not self._lumberjack_id then
             lumberjack_count = lumberjack_count + 1
@@ -627,7 +636,7 @@ mobs:register_mob("civi_npc:lumberjack", {
                     local is_sapling = core.get_item_group(iname, "sapling") > 0 or iname:find("sapling")
                     local is_wood = core.get_item_group(iname, "tree") > 0 or iname == "default:tree"
                     local is_fruit = core.get_item_group(iname, "leafdecay") > 0 or iname:find("apple")
-                    
+
                     if is_sapling then
                         self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + stack:get_count()
                         obj:remove()
