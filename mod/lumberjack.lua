@@ -191,31 +191,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                 
                 if self.chopping_timer > 2.0 then
                     self.chopping_timer = 0
-                    
-                    -- Sammle gepflanzte Setzlinge in der Umgebung auf (wie bisher)
-                    for y_offset = -1, 2 do
-                        for x_offset = -3, 3 do
-                            for z_offset = -3, 3 do
-                                local check_pos = {
-                                    x = self.target_tree.x + x_offset,
-                                    y = self.target_tree.y + y_offset,
-                                    z = self.target_tree.z + z_offset
-                                }
-                                local node = core.get_node(check_pos)
-                                if core.get_item_group(node.name, "sapling") > 0 then
-                                    local drops = core.get_node_drops(node.name, "")
-                                    for _, item in ipairs(drops) do
-                                        local stack = ItemStack(item)
-                                        local iname = stack:get_name()
-                                        if core.get_item_group(iname, "sapling") > 0 or iname:find("sapling") then
-                                            self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + stack:get_count()
-                                        end
-                                    end
-                                    core.remove_node(check_pos)
-                                end
-                            end
-                        end
-                    end
+
 
                     -- Identifiziere alle zusammenhängenden Holzblöcke auch diagonal
                     local tree_blocks, root_pos = get_connected_wood(self.target_tree, 400)
@@ -240,7 +216,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                         core.remove_node(p)
                     end
 
-                    -- Fülle die Wurzel (tiefster Block) mit passendem Dirt auf
+                    -- Fülle die Wurzel (tiefster Block) mit passendem Dirt auf und setze einen Setzling
                     if root_pos then
                         local fill_mat = "default:dirt"
                         local neighbor_offsets = {
@@ -256,6 +232,24 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                             end
                         end
                         core.set_node(root_pos, { name = fill_mat })
+
+                        -- Setzling auf die Wurzel pflanzen
+                        local plant_pos = { x = root_pos.x, y = root_pos.y + 1, z = root_pos.z }
+                        if core.get_node(plant_pos).name == "air" then
+                            local sapling_to_plant = nil
+                            for s_name, count in pairs(self.inv.saplings) do
+                                if count > 0 then
+                                    sapling_to_plant = s_name
+                                    break
+                                end
+                            end
+
+                            if sapling_to_plant then
+                                core.set_node(plant_pos, { name = sapling_to_plant })
+                                self.inv.saplings[sapling_to_plant] = self.inv.saplings[sapling_to_plant] - 1
+                                core.sound_play("default_place_node", { pos = plant_pos, gain = 0.5 })
+                            end
+                        end
                     end
 
                     --[[ Auskommentiert auf User-Wunsch: Pflanzen der Setzlinge und Bodenausgleich
@@ -471,7 +465,8 @@ local function lumberjack_search_logic(self, dtime, pos)
             self.search_timer = 0
 
             -- 1. TRUHEN-SUCHE (Priorität falls wir Holz haben)
-            if (self.inv.wood or 0) > 0 then
+            -- 1. TRUHEN-SUCHE (Priorität falls wir mind. 99 Holz haben)
+            if (self.inv.wood or 0) >= 99 then
                 set_state(self, "Searching for chest (Wood: " .. tostring(self.inv.wood) .. ")")
                 local range = 110
                 local chests = core.find_nodes_in_area(
@@ -501,8 +496,9 @@ local function lumberjack_search_logic(self, dtime, pos)
             end
 
             -- 2. BAUM-SUCHE (Falls wir kein Holz haben)
-            if (self.inv.wood or 0) == 0 then
-                set_state(self, "Searching for tree (Wood: 0)")
+            -- 2. BAUM-SUCHE (Falls wir weniger als 99 Holz haben)
+            if (self.inv.wood or 0) < 99 then
+                set_state(self, "Searching for tree (Wood: " .. tostring(self.inv.wood) .. ")")
                 local range = 100
                 local found_nodes = core.find_nodes_in_area(
                     { x = pos.x - range, y = pos.y - range, z = pos.z - range },
