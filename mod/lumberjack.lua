@@ -84,10 +84,17 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                         self.inv.wood = 0
                     end
 
-                    -- Sonstige Items (Äpfel, etc.) ablegen
+                    -- Sonstige Items (Äpfel, sticks etc.) ablegen
                     for name, count in pairs(self.inv.items) do
                         if count > 0 then
-                            inv:add_item("main", ItemStack(name .. " " .. count))
+                            -- Müll-Filter: Blätter, Gras und Blumen werden entsorgt statt eingelagert
+                            local is_trash = core.get_item_group(name, "leaves") > 0 or
+                                             core.get_item_group(name, "grass") > 0 or
+                                             core.get_item_group(name, "flora") > 0
+                            
+                            if not is_trash then
+                                inv:add_item("main", ItemStack(name .. " " .. count))
+                            end
                             self.inv.items[name] = 0
                         end
                     end
