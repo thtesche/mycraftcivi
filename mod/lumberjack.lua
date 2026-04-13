@@ -145,12 +145,43 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                         end
                     end
 
-                    -- Setzlinge ablegen
+                    -- Zähle aktuelle Setzlinge
+                    local total_saplings = 0
                     for name, count in pairs(self.inv.saplings) do
-                        if count > 0 then
-                            local l = inv:add_item("main", ItemStack(name .. " " .. count))
-                            self.inv.saplings[name] = l:get_count()
-                            if l:get_count() > 0 then leftovers = true end
+                        total_saplings = total_saplings + count
+                    end
+
+                    if total_saplings > 50 then
+                        -- Überschüssige Setzlinge ablegen
+                        local to_remove = total_saplings - 50
+                        for name, count in pairs(self.inv.saplings) do
+                            if to_remove > 0 and count > 0 then
+                                local remove_from_this = math.min(count, to_remove)
+                                local l = inv:add_item("main", ItemStack(name .. " " .. remove_from_this))
+                                local actually_removed = remove_from_this - l:get_count()
+                                self.inv.saplings[name] = count - actually_removed
+                                to_remove = to_remove - actually_removed
+                                if l:get_count() > 0 then leftovers = true end
+                            end
+                        end
+                    elseif total_saplings < 50 then
+                        -- Setzlinge aus der Truhe entnehmen
+                        local to_add = 50 - total_saplings
+                        local list = inv:get_list("main")
+                        for i = 1, inv:get_size("main") do
+                            local stack = list[i]
+                            if not stack:is_empty() then
+                                local iname = stack:get_name()
+                                local is_sapling = core.get_item_group(iname, "sapling") > 0 or iname:find("sapling")
+                                if is_sapling then
+                                    local take_count = math.min(stack:get_count(), to_add)
+                                    local taken_stack = stack:take_item(take_count)
+                                    inv:set_stack("main", i, stack)
+                                    self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + taken_stack:get_count()
+                                    to_add = to_add - taken_stack:get_count()
+                                    if to_add <= 0 then break end
+                                end
+                            end
                         end
                     end
 
@@ -279,25 +310,39 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                         core.remove_node(p)
                     end
 
-                    -- Fülle die Wurzel (tiefster Block) mit passendem Dirt auf und setze einen Setzling
+                    -- Fülle die Wurzel auf, falls in einem Loch, und pflanze den Setzling
                     if root_pos then
-                        local fill_mat = "default:dirt"
-                        local neighbor_offsets = {
-                            { x = 1, y = 0, z = 0 }, { x = -1, y = 0, z = 0 }, { x = 0, y = 0, z = 1 }, { x = 0, y = 0, z = -1 },
-                            { x = 0, y = -1, z = 0 }, { x = 1, y = -1, z = 0 }, { x = -1, y = -1, z = 0 }, { x = 0, y = -1, z = 1 }, { x = 0, y = -1, z = -1 }
-                        }
-                        for _, moff in ipairs(neighbor_offsets) do
-                            local npos = vector.add(root_pos, moff)
-                            local nname = core.get_node(npos).name
-                            if core.get_item_group(nname, "soil") > 0 or core.get_item_group(nname, "dirt") > 0 then
-                                fill_mat = nname
+                        local is_hole = false
+                        local horiz_offsets = { {x=1,y=0,z=0}, {x=-1,y=0,z=0}, {x=0,y=0,z=1}, {x=0,y=0,z=-1} }
+                        for _, moff in ipairs(horiz_offsets) do
+                            local nname = core.get_node(vector.add(root_pos, moff)).name
+                            if nname ~= "air" and core.get_item_group(nname, "leaves") == 0 and core.get_item_group(nname, "plant") == 0 then
+                                is_hole = true
                                 break
                             end
                         end
-                        core.set_node(root_pos, { name = fill_mat })
+                        
+                        local plant_pos = { x = root_pos.x, y = root_pos.y, z = root_pos.z }
 
-                        -- Setzling auf die Wurzel pflanzen
-                        local plant_pos = { x = root_pos.x, y = root_pos.y + 1, z = root_pos.z }
+                        if is_hole then
+                            local fill_mat = "default:dirt"
+                            for _, moff in ipairs(horiz_offsets) do
+                                local nname = core.get_node(vector.add(root_pos, moff)).name
+                                if core.get_item_group(nname, "soil") > 0 or core.get_item_group(nname, "dirt") > 0 then
+                                    fill_mat = nname
+                                    break
+                                end
+                            end
+                            core.set_node(root_pos, { name = fill_mat })
+                            plant_pos.y = root_pos.y + 1
+                        else
+                            local under_pos = { x = root_pos.x, y = root_pos.y - 1, z = root_pos.z }
+                            local under_node = core.get_node(under_pos)
+                            if core.get_item_group(under_node.name, "soil") == 0 and core.get_item_group(under_node.name, "dirt") == 0 then
+                                core.set_node(under_pos, { name = "default:dirt" })
+                            end
+                        end
+
                         if core.get_node(plant_pos).name == "air" then
                             local sapling_to_plant = nil
                             for s_name, count in pairs(self.inv.saplings) do
@@ -685,7 +730,7 @@ mobs:register_mob("civi_npc:lumberjack", {
         if not pos then return false end
 
         -- Gegenstände (Setzlinge, Früchte, Holz) vom Boden aufsammeln (da Blätter nun frei droppen)
-        for _, obj in ipairs(core.get_objects_inside_radius(pos, 4)) do
+        for _, obj in ipairs(core.get_objects_inside_radius(pos, 8)) do
             if not obj:is_player() and obj:get_luaentity() and obj:get_luaentity().name == "__builtin:item" then
                 local itemstring = obj:get_luaentity().itemstring
                 if itemstring then
