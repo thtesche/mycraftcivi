@@ -119,6 +119,54 @@ local function lumberjack_chest_interaction(self, dtime, pos)
     return false
 end
 
+local function get_connected_wood(pos, max_nodes)
+    local visited = {}
+    local nodes = {}
+    local queue = {pos}
+    local root = vector.new(pos)
+    local min_y = pos.y
+
+    local function pos_to_hash(p)
+        return p.x .. "," .. p.y .. "," .. p.z
+    end
+
+    visited[pos_to_hash(pos)] = true
+
+    while #queue > 0 do
+        local p = table.remove(queue, 1)
+        table.insert(nodes, p)
+
+        if p.y < min_y then
+            min_y = p.y
+            root = vector.new(p)
+        end
+
+        if #nodes >= (max_nodes or 400) then
+            break
+        end
+
+        for dx = -1, 1 do
+            for dy = -1, 1 do
+                for dz = -1, 1 do
+                    if dx ~= 0 or dy ~= 0 or dz ~= 0 then
+                        local np = {x = p.x + dx, y = p.y + dy, z = p.z + dz}
+                        local hash = pos_to_hash(np)
+                        if not visited[hash] then
+                            local name = core.get_node(np).name
+                            if name ~= "ignore" and core.get_item_group(name, "tree") > 0 then
+                                visited[hash] = true
+                                table.insert(queue, np)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nodes, root
+end
+
 --- Interaktion mit Bäumen (Fällen und Aufforsten).
 local function lumberjack_tree_interaction(self, dtime, pos)
     if self.target_tree then
@@ -143,10 +191,9 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                 
                 if self.chopping_timer > 2.0 then
                     self.chopping_timer = 0
-                    local removed_trunks = {}
                     
-                    -- Fällt den kompletten Baum in einem 7x7x30 Bereich
-                    for y_offset = -1, 30 do
+                    -- Sammle gepflanzte Setzlinge in der Umgebung auf (wie bisher)
+                    for y_offset = -1, 2 do
                         for x_offset = -3, 3 do
                             for z_offset = -3, 3 do
                                 local check_pos = {
@@ -155,29 +202,13 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                                     z = self.target_tree.z + z_offset
                                 }
                                 local node = core.get_node(check_pos)
-                                local is_tree = core.get_item_group(node.name, "tree") > 0
-                                local is_leaves = core.get_item_group(node.name, "leaves") > 0
-                                local is_fruit = core.get_item_group(node.name, "leafdecay") > 0
-                                local is_flora = core.get_item_group(node.name, "flora") > 0 or 
-                                                 core.get_item_group(node.name, "grass") > 0 or
-                                                 core.get_item_group(node.name, "sapling") > 0 or
-                                                 core.get_item_group(node.name, "bushy") > 0
-
-                                if is_tree or is_leaves or is_fruit or is_flora then
-                                    if is_tree then table.insert(removed_trunks, check_pos) end
+                                if core.get_item_group(node.name, "sapling") > 0 then
                                     local drops = core.get_node_drops(node.name, "")
                                     for _, item in ipairs(drops) do
                                         local stack = ItemStack(item)
                                         local iname = stack:get_name()
-                                        local is_sapling = core.get_item_group(iname, "sapling") > 0 or iname:find("sapling")
-
-                                        if core.get_item_group(iname, "tree") > 0 or iname == "default:tree" then
-                                            self.inv.wood = (self.inv.wood or 0) + stack:get_count()
-                                        elseif is_sapling then
+                                        if core.get_item_group(iname, "sapling") > 0 or iname:find("sapling") then
                                             self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + stack:get_count()
-                                        else
-                                            -- Alles andere (Früchte, Gras, Flora) landet im allgemeinen Inventar
-                                            self.inv.items[iname] = (self.inv.items[iname] or 0) + stack:get_count()
                                         end
                                     end
                                     core.remove_node(check_pos)
@@ -186,8 +217,48 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                         end
                     end
 
+                    -- Identifiziere alle zusammenhängenden Holzblöcke auch diagonal
+                    local tree_blocks, root_pos = get_connected_wood(self.target_tree, 400)
 
+                    for _, p in ipairs(tree_blocks) do
+                        local node = core.get_node(p)
+                        local drops = core.get_node_drops(node.name, "")
+                        for _, item in ipairs(drops) do
+                            local stack = ItemStack(item)
+                            local iname = stack:get_name()
+                            local is_sapling = core.get_item_group(iname, "sapling") > 0 or iname:find("sapling")
 
+                            if core.get_item_group(iname, "tree") > 0 or iname == "default:tree" then
+                                self.inv.wood = (self.inv.wood or 0) + stack:get_count()
+                            elseif is_sapling then
+                                self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + stack:get_count()
+                            else
+                                self.inv.items[iname] = (self.inv.items[iname] or 0) + stack:get_count()
+                            end
+                        end
+                        -- Nur diese Holzblöcke entfernen
+                        core.remove_node(p)
+                    end
+
+                    -- Fülle die Wurzel (tiefster Block) mit passendem Dirt auf
+                    if root_pos then
+                        local fill_mat = "default:dirt"
+                        local neighbor_offsets = {
+                            {x=1,y=0,z=0}, {x=-1,y=0,z=0}, {x=0,y=0,z=1}, {x=0,y=0,z=-1}, 
+                            {x=0,y=-1,z=0}, {x=1,y=-1,z=0}, {x=-1,y=-1,z=0}, {x=0,y=-1,z=1}, {x=0,y=-1,z=-1}
+                        }
+                        for _, moff in ipairs(neighbor_offsets) do
+                            local npos = vector.add(root_pos, moff)
+                            local nname = core.get_node(npos).name
+                            if core.get_item_group(nname, "soil") > 0 or core.get_item_group(nname, "dirt") > 0 then
+                                fill_mat = nname
+                                break
+                            end
+                        end
+                        core.set_node(root_pos, { name = fill_mat })
+                    end
+
+                    --[[ Auskommentiert auf User-Wunsch: Pflanzen der Setzlinge und Bodenausgleich
                     -- Wiederaufforstung: Max 2 Setzlinge an zufälligen Orten im 7x7 Grid
                     local sapling_list = {}
                     for s_name, count in pairs(self.inv.saplings) do
@@ -264,6 +335,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                             end
                         end
                     end
+                    ]]--
 
                     self.target_tree = nil
                     self.stand_target = nil
@@ -548,6 +620,31 @@ mobs:register_mob("civi_npc:lumberjack", {
 
         local pos = self.object:get_pos()
         if not pos then return false end
+
+        -- Gegenstände (Setzlinge, Früchte, Holz) vom Boden aufsammeln (da Blätter nun frei droppen)
+        for _, obj in ipairs(core.get_objects_inside_radius(pos, 4)) do
+            if not obj:is_player() and obj:get_luaentity() and obj:get_luaentity().name == "__builtin:item" then
+                local itemstring = obj:get_luaentity().itemstring
+                if itemstring then
+                    local stack = ItemStack(itemstring)
+                    local iname = stack:get_name()
+                    local is_sapling = core.get_item_group(iname, "sapling") > 0 or iname:find("sapling")
+                    local is_wood = core.get_item_group(iname, "tree") > 0 or iname == "default:tree"
+                    local is_fruit = core.get_item_group(iname, "leafdecay") > 0 or iname:find("apple")
+                    
+                    if is_sapling then
+                        self.inv.saplings[iname] = (self.inv.saplings[iname] or 0) + stack:get_count()
+                        obj:remove()
+                    elseif is_wood then
+                        self.inv.wood = (self.inv.wood or 0) + stack:get_count()
+                        obj:remove()
+                    elseif is_fruit then
+                        self.inv.items[iname] = (self.inv.items[iname] or 0) + stack:get_count()
+                        obj:remove()
+                    end
+                end
+            end
+        end
 
         -- Recovery durch Mobs API (falls festgesteckt)
         self.mobs_takeover_timer = (self.mobs_takeover_timer or 0) - dtime
