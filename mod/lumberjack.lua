@@ -77,7 +77,17 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             core.log("action", "[civi_npc] ERROR: Chest rejected! Node: " .. tostring(tname))
             self.target_chest = nil
             self.stand_target = nil
+            if self.home_pos and vector.equals(self.home_pos, self.target_chest) then
+                self.home_pos = nil
+            end
         else
+            -- Bei Interaktion setzen wir dieses Chest als dauerhaftes "Zuhause"
+            if not self.home_pos then
+                self.home_pos = vector.new(self.target_chest)
+                core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
+                    " established HOME at " .. core.pos_to_string(self.home_pos))
+            end
+            
             -- Distanzprüfung zur Truhe
             local chest_center = { x = self.target_chest.x + 0.5, y = self.target_chest.y + 0.5, z = self.target_chest.z +
             0.5 }
@@ -659,13 +669,31 @@ local function lumberjack_search_logic(self, dtime, pos)
             local time = core.get_timeofday() or 0.5
             local is_night = (time > 0.76 or time < 0.24)
 
-            -- 1. TRUHEN-SUCHE (Priorität falls wir Holz haben oder Nacht ist)
-            if is_night or (self.inv.wood or 0) >= 99 then
-                set_state(self, "Searching for chest (Wood: " .. tostring(self.inv.wood) .. ")")
+            -- 0. HOME-VALIDIERUNG (Existiert die Truhe noch?)
+            if self.home_pos then
+                local node = core.get_node(self.home_pos)
+                if node.name == "ignore" then
+                    -- Block nicht geladen, wir behalten die Info
+                elseif node.name ~= "default:chest" and node.name ~= "default:chest_locked" and
+                       node.name ~= "default:chest_open" and node.name ~= "default:chest_locked_open" then
+                    core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
+                        " lost HOME (Chest removed) at " .. core.pos_to_string(self.home_pos))
+                    self.home_pos = nil
+                end
+            end
+
+            -- 1. TRUHEN-SUCHE (Priorität falls wir Holz haben, Nacht ist ODER wir noch kein HOME haben)
+            if is_night or (self.inv.wood or 0) >= 99 or not self.home_pos then
+                set_state(self, "Searching for " .. (self.home_pos and "chest" or "HOME chest"))
+                local search_center = pos
                 local range = 110
+                
+                -- Falls wir ein Home haben, aber weit weg sind, suchen wir bevorzugt dort
+                if self.home_pos then search_center = self.home_pos end
+
                 local chests = core.find_nodes_in_area(
-                    { x = pos.x - range, y = pos.y - range, z = pos.z - range },
-                    { x = pos.x + range, y = pos.y + range, z = pos.z + range },
+                    { x = search_center.x - range, y = search_center.y - range, z = search_center.z - range },
+                    { x = search_center.x + range, y = search_center.y + range, z = search_center.z + range },
                     { "default:chest", "default:chest_locked", "default:chest_open", "default:chest_locked_open" }
                 )
 
@@ -703,13 +731,14 @@ local function lumberjack_search_logic(self, dtime, pos)
                 end
             end
 
-            -- 2. BAUM-SUCHE (Falls wir weniger als 99 Holz haben und Tag ist)
-            if not is_night and (self.inv.wood or 0) < 99 then
-                set_state(self, "Searching for tree (Wood: " .. tostring(self.inv.wood) .. ")")
-                local range = 100
+            -- 2. BAUM-SUCHE (Falls wir weniger als 99 Holz haben, Tag ist UND wir ein Home haben)
+            if not is_night and (self.inv.wood or 0) < 99 and self.home_pos then
+                set_state(self, "Searching for tree near HOME")
+                local search_center = self.home_pos
+                local range = 60 -- Wir suchen nur im 60m Umkreis um die Truhe
                 local found_nodes = core.find_nodes_in_area(
-                    { x = pos.x - range, y = pos.y - range, z = pos.z - range },
-                    { x = pos.x + range, y = pos.y + range, z = pos.z + range },
+                    { x = search_center.x - range, y = search_center.y - range, z = search_center.z - range },
+                    { x = search_center.x + range, y = search_center.y + range, z = search_center.z + range },
                     { "group:tree" }
                 )
 
@@ -883,6 +912,19 @@ mobs:register_mob("civi_npc:lumberjack", {
         end
 
         -- Haupt-Entscheidungsbaum
+        
+        -- Sicherheitsschranke: Entfernung zum Zuhause prüfen
+        if self.home_pos then
+            local dist_home = vector.distance(pos, self.home_pos)
+            if dist_home > 100 and not self.target_chest then
+                set_state(self, "Too far from HOME (" .. math.floor(dist_home) .. "m)! Returning.")
+                self.target_tree = nil
+                self.target_chest = self.home_pos
+                self.stand_target = common.find_standing_spot(self.home_pos)
+                self.path_timer = 3.1
+            end
+        end
+
         if lumberjack_chest_interaction(self, dtime, pos) then return true end
         if lumberjack_tree_interaction(self, dtime, pos) then return true end
 
