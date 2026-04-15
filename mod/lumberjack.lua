@@ -30,6 +30,40 @@ local function get_soil_y(x, z, start_y)
 end
 
 
+--- Hilfsfunktion: Entfernt "weiche" Hindernisse (Blätter, Erde) im Weg.
+local function clear_soft_obstacles(self, pos, direction)
+    if not direction then return false end
+    local check_pos = vector.add(pos, vector.multiply(direction, 0.8))
+    local cleared = false
+
+    -- Prüfe Brusthöhe (1) und Kopfhöhe (2)
+    for _, dy in ipairs({ 1, 2 }) do
+        local p = { x = check_pos.x, y = math.floor(pos.y + dy), z = check_pos.z }
+        local node = core.get_node(p)
+        if node.name ~= "air" and node.name ~= "ignore" then
+            local is_soft = core.get_item_group(node.name, "leaves") > 0 or
+                core.get_item_group(node.name, "dirt") > 0 or
+                core.get_item_group(node.name, "soil") > 0 or
+                core.get_item_group(node.name, "grass") > 0 or
+                core.get_item_group(node.name, "flora") > 0 or
+                node.name:find("bush")
+
+            if is_soft then
+                core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
+                    " clearing path at " .. core.pos_to_string(p) .. " (" .. node.name .. ")")
+                
+                -- Abbauen (simuliert durch Entfernen + Sound + Partikel)
+                core.remove_node(p)
+                core.sound_play("default_dig_choppy", { pos = p, gain = 0.5, max_hear_distance = 10 })
+                self:set_animation("punch")
+                cleared = true
+            end
+        end
+    end
+    return cleared
+end
+
+
 --- Interaktion mit der Truhe (Einlagern von gesammeltem Holz/Items).
 local function lumberjack_chest_interaction(self, dtime, pos)
     if self.target_chest then
@@ -552,8 +586,15 @@ local function lumberjack_pathfinding(self, dtime, pos, target)
                 self.jump_cooldown = 0.5
             end
 
-            -- Stuck-Erkennung
+            -- Stuck-Erkennung & Hindernisbeseitigung
             self.stuck_timer = (self.stuck_timer or 0) + dtime
+            if self.stuck_timer >= 0.8 then
+                if clear_soft_obstacles(self, pos, direction) then
+                    -- Falls etwas weggeräumt wurde, geben wir ihm eine Chance weiterzulaufen
+                    -- self.stuck_timer = 0 -- Optional: Timer zurücksetzen?
+                end
+            end
+
             if self.stuck_timer >= 3.0 then
                 if self.last_pos and vector.distance(pos, self.last_pos) < 0.5 then
                     core.log("action", "[civi_npc] Path stuck at " .. core.pos_to_string(pos) .. "! Handing to Mobs API.")
@@ -588,7 +629,12 @@ local function lumberjack_greedy_movement(self, dtime, pos, target)
             self.jump_cooldown = 1.0
         end
 
+        -- Stuck-Erkennung & Hindernisbeseitigung
         self.stuck_timer = (self.stuck_timer or 0) + dtime
+        if self.stuck_timer > 0.8 then
+            clear_soft_obstacles(self, pos, direction)
+        end
+
         if self.stuck_timer > 3.0 then
             if self.last_pos and vector.distance(pos, self.last_pos) < 0.2 then
                 self.greedy_timer = 0
