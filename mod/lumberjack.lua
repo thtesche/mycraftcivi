@@ -51,7 +51,7 @@ local function clear_soft_obstacles(self, pos, direction)
             if is_soft then
                 core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
                     " clearing path at " .. core.pos_to_string(p) .. " (" .. node.name .. ")")
-                
+
                 -- Abbauen (simuliert durch Entfernen + Sound + Partikel)
                 core.remove_node(p)
                 core.sound_play("default_dig_choppy", { pos = p, gain = 0.5, max_hear_distance = 10 })
@@ -87,10 +87,14 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                 core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
                     " established HOME at " .. core.pos_to_string(self.home_pos))
             end
-            
+
             -- Distanzprüfung zur Truhe
-            local chest_center = { x = self.target_chest.x + 0.5, y = self.target_chest.y + 0.5, z = self.target_chest.z +
-            0.5 }
+            local chest_center = {
+                x = self.target_chest.x + 0.5,
+                y = self.target_chest.y + 0.5,
+                z = self.target_chest.z +
+                    0.5
+            }
             local d2d = vector.distance({ x = pos.x, y = 0, z = pos.z },
                 { x = chest_center.x, y = 0, z = chest_center.z })
             local dy = math.abs(pos.y - self.target_chest.y)
@@ -98,7 +102,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             if d2d <= 2.5 and dy <= 3.0 then
                 local time = core.get_timeofday() or 0.5
                 local is_night = (time > 0.76 or time < 0.24)
-                
+
                 local total_saplings = 0
                 for _, count in pairs(self.inv.saplings) do
                     total_saplings = total_saplings + count
@@ -106,8 +110,10 @@ local function lumberjack_chest_interaction(self, dtime, pos)
 
                 local has_chest_task = false
                 if (self.inv.wood or 0) > 0 then has_chest_task = true end
-                for _, v in pairs(self.inv.items) do if v > 0 then has_chest_task = true; break end end
-                
+                for _, v in pairs(self.inv.items) do if v > 0 then
+                        has_chest_task = true; break
+                    end end
+
                 -- Setzling-Refill nur, wenn Cooldown abgelaufen ist
                 if total_saplings > 50 then
                     has_chest_task = true
@@ -177,7 +183,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                             local l = inv:add_item("main", ItemStack("default:tree " .. remaining_wood))
                             left_wood_count = l:get_count()
                         end
-                        
+
                         local restored_wood = left_wood_count + math.ceil(left_boards_count / 4)
                         self.inv.wood = restored_wood
                         if restored_wood > 0 then leftovers = true end
@@ -242,7 +248,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                                 end
                             end
                         end
-                        
+
                         -- Falls nichts gefunden wurde, Cooldown setzen (5 Minuten)
                         if gained == 0 then
                             self.refill_cooldown = 300
@@ -280,7 +286,7 @@ local function get_connected_wood(pos, max_nodes)
     local visited = {}
     local nodes = {}
     local queue = { pos }
-    
+
     local min_y = pos.y
     local max_y = pos.y
     local top = vector.new(pos)
@@ -469,8 +475,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                                         local node_under = core.get_node({ x = py.x, y = py.y - 1, z = py.z })
 
                                         if node_at.name == "air" and (core.get_item_group(node_under.name, "soil") > 0 or
-                                            core.get_item_group(node_under.name, "dirt") > 0) then
-
+                                                core.get_item_group(node_under.name, "dirt") > 0) then
                                             local dist = vector.distance(py, plant_pos1)
                                             if dist >= 3.0 and dist <= 6.0 then
                                                 local s_name = sapling_list[1]
@@ -515,9 +520,11 @@ local function lumberjack_pathfinding(self, dtime, pos, target)
     if (not self.path_way or #self.path_way == 0) and self.path_timer > 3.0 then
         self.path_timer = 0
         local pos_str = "(" .. math.floor(pos.x) .. "," .. math.floor(pos.y) .. "," .. math.floor(pos.z) .. ")"
-        local target_str = "(" .. math.floor(self.stand_target.x) .. "," .. math.floor(self.stand_target.y) .. "," .. math.floor(self.stand_target.z) .. ")"
-        
-        core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") .. 
+        local target_str = "(" ..
+        math.floor(self.stand_target.x) ..
+        "," .. math.floor(self.stand_target.y) .. "," .. math.floor(self.stand_target.z) .. ")"
+
+        core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
             " starting journey to standing spot " .. target_str .. " from feet at " .. pos_str)
 
         self.path_way = core.find_path(pos, self.stand_target, 100, 1, 3, "AStar")
@@ -650,7 +657,7 @@ local function lumberjack_search_logic(self, dtime, pos)
                 if node.name == "ignore" then
                     -- Block nicht geladen, wir behalten die Info
                 elseif node.name ~= "default:chest" and node.name ~= "default:chest_locked" and
-                       node.name ~= "default:chest_open" and node.name ~= "default:chest_locked_open" then
+                    node.name ~= "default:chest_open" and node.name ~= "default:chest_locked_open" then
                     core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
                         " lost HOME (Chest removed) at " .. core.pos_to_string(self.home_pos))
                     self.home_pos = nil
@@ -662,7 +669,7 @@ local function lumberjack_search_logic(self, dtime, pos)
                 set_state(self, "Searching for " .. (self.home_pos and "chest" or "HOME chest"))
                 local search_center = pos
                 local range = 110
-                
+
                 -- Falls wir ein Home haben, aber weit weg sind, suchen wir bevorzugt dort
                 if self.home_pos then search_center = self.home_pos end
 
@@ -890,7 +897,7 @@ mobs:register_mob("civi_npc:lumberjack", {
         end
 
         -- Haupt-Entscheidungsbaum
-        
+
         -- Sicherheitsschranke: Entfernung zum Zuhause prüfen
         if self.home_pos then
             local dist_home = vector.distance(pos, self.home_pos)
@@ -920,14 +927,14 @@ mobs:register_mob("civi_npc:lumberjack", {
 })
 
 -- Spawnen des Holzfällers auf Gras
-mobs:spawn({
+--[[ mobs:spawn({
     name = "civi_npc:lumberjack",
     nodes = { "default:dirt_with_grass" },
     min_light = 10,
     chance = 7000,
     active_object_count = 1,
     min_height = 0,
-})
+}) ]]
 
 -- Spawnegg registrieren
 mobs:register_egg("civi_npc:lumberjack", "Lumberjack (myCraftCivi)", "civi_lumberjack_spawner.png")
