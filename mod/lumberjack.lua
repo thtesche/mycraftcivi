@@ -16,6 +16,49 @@ local function set_state(self, new_state)
 end
 
 
+--- Prüft, ob ein Block an dieser Stelle stabil platziert werden kann (Regeln vom User).
+--- 1. Der Block darunter muss Schnee, Dirt, Stein, Kohle oder Sand sein.
+--- 2. Mindestens einer der 8 horizontalen Nachbarn muss eines dieser Materialien sein.
+local function is_placement_stable(pos)
+    local function is_structural(pos_check)
+        local node = core.get_node(pos_check)
+        local name = node.name
+        if name == "ignore" then return false end
+
+        -- Gruppen-Checks
+        if core.get_item_group(name, "dirt") > 0 or
+            core.get_item_group(name, "soil") > 0 or
+            core.get_item_group(name, "stone") > 0 or
+            core.get_item_group(name, "sand") > 0 then
+            return true
+        end
+
+        -- Namens-Checks (Schnee, Kohle, etc.)
+        if name:find("snow") or name:find("coal") or name:find("stone") or name:find("dirt") or name:find("sand") then
+            return true
+        end
+
+        return false
+    end
+
+    -- Regel 1: Block darunter prüfen
+    if not is_structural({ x = pos.x, y = pos.y - 1, z = pos.z }) then return false end
+
+    -- Regel 2: 8 umgebende Blöcke prüfen
+    for dx = -1, 1 do
+        for dz = -1, 1 do
+            if dx ~= 0 or dz ~= 0 then
+                if is_structural({ x = pos.x + dx, y = pos.y, z = pos.z + dz }) then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+
 local function get_soil_y(x, z, start_y)
     for dy = 5, -5, -1 do
         local p = { x = x, y = start_y + dy, z = z }
@@ -436,13 +479,17 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                                     break
                                 end
                             end
-                            core.set_node(root_pos, { name = fill_mat })
-                            plant_pos1.y = root_pos.y + 1
+                            if is_placement_stable(root_pos) then
+                                core.set_node(root_pos, { name = fill_mat })
+                                plant_pos1.y = root_pos.y + 1
+                            end
                         else
                             local under_pos = { x = root_pos.x, y = root_pos.y - 1, z = root_pos.z }
                             local under_node = core.get_node(under_pos)
                             if core.get_item_group(under_node.name, "soil") == 0 and core.get_item_group(under_node.name, "dirt") == 0 then
-                                core.set_node(under_pos, { name = "default:dirt" })
+                                if is_placement_stable(under_pos) then
+                                    core.set_node(under_pos, { name = "default:dirt" })
+                                end
                             end
                         end
 
@@ -521,13 +568,13 @@ local function lumberjack_pathfinding(self, dtime, pos, target)
         self.path_timer = 0
         local pos_str = "(" .. math.floor(pos.x) .. "," .. math.floor(pos.y) .. "," .. math.floor(pos.z) .. ")"
         local target_str = "(" ..
-        math.floor(self.stand_target.x) ..
-        "," .. math.floor(self.stand_target.y) .. "," .. math.floor(self.stand_target.z) .. ")"
+            math.floor(target.x) ..
+            "," .. math.floor(target.y) .. "," .. math.floor(target.z) .. ")"
 
         core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") ..
-            " starting journey to standing spot " .. target_str .. " from feet at " .. pos_str)
+            " starting journey to target " .. target_str .. " from feet at " .. pos_str)
 
-        self.path_way = core.find_path(pos, self.stand_target, 100, 1, 3, "AStar")
+        self.path_way = core.find_path(pos, target, 100, 1, 3, "AStar")
 
         if self.path_way then
             self.greedy_timer = 0
