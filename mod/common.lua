@@ -2,34 +2,47 @@
 
 local common = {}
 
---- Findet einen gültigen Platz zum Stehen in der Nähe einer Zielposition.
+--- Findet alle gültigen Plätze zum Stehen in der Nähe einer Zielposition.
 -- @param target_pos Die Position, an der gearbeitet werden soll.
--- @return Eine Position {x, y, z} oder nil.
-function common.find_standing_spot(target_pos)
+-- @return Eine Tabelle mit Positionen {x, y, z}.
+function common.find_all_standing_spots(target_pos)
     local function is_passable(name)
         local def = core.registered_nodes[name]
         if not def or not def.walkable then return true end
-        if core.get_item_group(name, "leaves") > 0 then return true end
+        -- Blätter sind zwar passierbar für den Pfadfinder, aber wir wollen nicht darin STEHEN.
+        -- Daher stufen wir sie hier als "nicht passierbar" für die Standplatz-Wahl ein.
+        if core.get_item_group(name, "leaves") > 0 then return false end
+        if core.get_item_group(name, "tree") > 0 then return false end
         return false
     end
 
     local function is_solid_ground(name)
         local def = core.registered_nodes[name]
         if not def or not def.walkable then return false end
+        -- Wir stehen nicht auf Bäumen oder Blättern
         if core.get_item_group(name, "tree") > 0 then return false end
         if core.get_item_group(name, "leaves") > 0 then return false end
         return true
     end
 
     local neighbor_offsets = {
+        -- Distanz 2 (Bevorzugt)
+        { x = 2, z = 0 }, { x = -2, z = 0 }, { x = 0, z = 2 }, { x = 0, z = -2 },
+        { x = 2, z = 1 }, { x = 2, z = -1 }, { x = -2, z = 1 }, { x = -2, z = -1 },
+        { x = 1, z = 2 }, { x = 1, z = -2 }, { x = -1, z = 2 }, { x = -1, z = -2 },
+        { x = 2, z = 2 }, { x = -2, z = -2 }, { x = 2, z = -2 }, { x = -2, z = 2 },
+        -- Distanz 1 (Fallback)
         { x = 1, z = 0 }, { x = -1, z = 0 }, { x = 0, z = 1 }, { x = 0, z = -1 },
         { x = 1, z = 1 }, { x = -1, z = -1 }, { x = 1, z = -1 }, { x = -1, z = 1 }
     }
 
-    for _, off in ipairs(neighbor_offsets) do
-        local cx = target_pos.x + off.x
-        local cz = target_pos.z + off.z
-        for dy = 3, -5, -1 do
+    local spots = {}
+    -- Suche von der Zielhöhe aus nach oben und unten (Priorität auf dy=0)
+    for _, dy in ipairs({ 0, -1, 1, -2, 2, -3, 3, -4, -5 }) do
+        local found_at_this_height = false
+        for _, off in ipairs(neighbor_offsets) do
+            local cx = target_pos.x + off.x
+            local cz = target_pos.z + off.z
             local cy      = target_pos.y + dy
             local n_here  = core.get_node({ x = cx, y = cy, z = cz }).name
             local n_below = core.get_node({ x = cx, y = cy - 1, z = cz }).name
@@ -44,12 +57,24 @@ function common.find_standing_spot(target_pos)
                     end
                 end
                 if horizontal_ok then
-                    return { x = cx, y = cy, z = cz }
+                    table.insert(spots, { x = cx, y = cy, z = cz })
+                    found_at_this_height = true
                 end
             end
         end
+        -- Wenn wir Spots auf dieser "idealen" Höhe gefunden haben, brechen wir die vertikale Suche ab.
+        -- So garantieren wir, dass nur die besten Höhen zurückgegeben werden.
+        if found_at_this_height then
+            break
+        end
     end
-    return nil
+    return spots
+end
+
+--- Findet einen gültigen Platz zum Stehen (Wrapper für find_all_standing_spots).
+function common.find_standing_spot(target_pos)
+    local spots = common.find_all_standing_spots(target_pos)
+    return spots[1]
 end
 
 --- Setzt den Status des NPCs und loggt Änderungen.
@@ -60,9 +85,8 @@ end
 -- @param new_state Der neue Status-String.
 function common.set_state(self, state_field, id_field, prefix, new_state)
     local function is_boring(s)
-        return s == "Idle / Return FALSE" or
-            s == "Idle (Waiting for Search)" or
-            (s and s:sub(1, 9) == "Searching")
+        if not s then return true end
+        return s:find("Idle") or s:find("Searching") or s:find("Standing")
     end
 
     if self[state_field] ~= new_state then

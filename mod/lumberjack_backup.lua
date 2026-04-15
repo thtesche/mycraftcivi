@@ -45,8 +45,12 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             self.stand_target = nil
         else
             -- Distanzprüfung zur Truhe
-            local chest_center = { x = self.target_chest.x + 0.5, y = self.target_chest.y + 0.5, z = self.target_chest.z +
-            0.5 }
+            local chest_center = {
+                x = self.target_chest.x + 0.5,
+                y = self.target_chest.y + 0.5,
+                z = self.target_chest.z +
+                    0.5
+            }
             local d2d = vector.distance({ x = pos.x, y = 0, z = pos.z },
                 { x = chest_center.x, y = 0, z = chest_center.z })
             local dy = math.abs(pos.y - self.target_chest.y)
@@ -54,7 +58,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
             if d2d <= 2.5 and dy <= 3.0 then
                 local time = core.get_timeofday() or 0.5
                 local is_night = (time > 0.76 or time < 0.24)
-                
+
                 local total_saplings = 0
                 for _, count in pairs(self.inv.saplings) do
                     total_saplings = total_saplings + count
@@ -62,7 +66,9 @@ local function lumberjack_chest_interaction(self, dtime, pos)
 
                 local has_chest_task = false
                 if (self.inv.wood or 0) > 0 then has_chest_task = true end
-                for _, v in pairs(self.inv.items) do if v > 0 then has_chest_task = true; break end end
+                for _, v in pairs(self.inv.items) do if v > 0 then
+                        has_chest_task = true; break
+                    end end
                 if total_saplings ~= 50 then has_chest_task = true end
 
                 if self.chest_wait_timer and self.chest_wait_timer > 0 then
@@ -125,7 +131,7 @@ local function lumberjack_chest_interaction(self, dtime, pos)
                             local l = inv:add_item("main", ItemStack("default:tree " .. remaining_wood))
                             left_wood_count = l:get_count()
                         end
-                        
+
                         local restored_wood = left_wood_count + math.ceil(left_boards_count / 4)
                         self.inv.wood = restored_wood
                         if restored_wood > 0 then leftovers = true end
@@ -219,10 +225,8 @@ local function get_connected_wood(pos, max_nodes)
     local visited = {}
     local nodes = {}
     local queue = { pos }
-    
+    local root = vector.new(pos)
     local min_y = pos.y
-    local max_y = pos.y
-    local top = vector.new(pos)
 
     local function pos_to_hash(p)
         return p.x .. "," .. p.y .. "," .. p.z
@@ -236,10 +240,7 @@ local function get_connected_wood(pos, max_nodes)
 
         if p.y < min_y then
             min_y = p.y
-        end
-        if p.y > max_y then
-            max_y = p.y
-            top = vector.new(p)
+            root = vector.new(p)
         end
 
         if #nodes >= (max_nodes or 400) then
@@ -265,27 +266,7 @@ local function get_connected_wood(pos, max_nodes)
         end
     end
 
-    -- Berechne den Schwerpunkt (Center) aller Blöcke auf der tiefsten Ebene
-    local base_nodes = {}
-    for _, n in ipairs(nodes) do
-        if n.y == min_y then
-            table.insert(base_nodes, n)
-        end
-    end
-
-    local sum_x, sum_z = 0, 0
-    for _, n in ipairs(base_nodes) do
-        sum_x = sum_x + n.x
-        sum_z = sum_z + n.z
-    end
-
-    local root_center = {
-        x = math.floor(sum_x / #base_nodes + 0.5),
-        y = min_y,
-        z = math.floor(sum_z / #base_nodes + 0.5)
-    }
-
-    return nodes, root_center, top
+    return nodes, root
 end
 
 --- Interaktion mit Bäumen (Fällen und Aufforsten).
@@ -299,8 +280,12 @@ local function lumberjack_tree_interaction(self, dtime, pos)
             self.target_tree = nil
             self.stand_target = nil
         else
-            local tree_center = { x = self.target_tree.x + 0.5, y = self.target_tree.y + 0.5, z = self.target_tree.z +
-            0.5 }
+            local tree_center = {
+                x = self.target_tree.x + 0.5,
+                y = self.target_tree.y + 0.5,
+                z = self.target_tree.z +
+                    0.5
+            }
             local dist_2d = vector.distance({ x = pos.x, y = 0, z = pos.z },
                 { x = tree_center.x, y = 0, z = tree_center.z })
             local dist_y = math.abs(pos.y - self.target_tree.y)
@@ -342,7 +327,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                     -- Fülle die Wurzel auf, falls in einem Loch, und pflanze den Setzling
                     if root_pos then
                         local is_hole = false
-                        local horiz_offsets = { {x=1,y=0,z=0}, {x=-1,y=0,z=0}, {x=0,y=0,z=1}, {x=0,y=0,z=-1} }
+                        local horiz_offsets = { { x = 1, y = 0, z = 0 }, { x = -1, y = 0, z = 0 }, { x = 0, y = 0, z = 1 }, { x = 0, y = 0, z = -1 } }
                         for _, moff in ipairs(horiz_offsets) do
                             local nname = core.get_node(vector.add(root_pos, moff)).name
                             if nname ~= "air" and core.get_item_group(nname, "leaves") == 0 and core.get_item_group(nname, "plant") == 0 then
@@ -350,7 +335,7 @@ local function lumberjack_tree_interaction(self, dtime, pos)
                                 break
                             end
                         end
-                        
+
                         local plant_pos = { x = root_pos.x, y = root_pos.y, z = root_pos.z }
 
                         if is_hole then
@@ -495,21 +480,13 @@ local function lumberjack_pathfinding(self, dtime, pos, target)
     -- Pfad berechnen (alle 3 Sekunden oder falls kein Pfad vorhanden)
     if (not self.path_way or #self.path_way == 0) and self.path_timer > 3.0 then
         self.path_timer = 0
-        local pos_str = "(" .. math.floor(pos.x) .. "," .. math.floor(pos.y) .. "," .. math.floor(pos.z) .. ")"
-        local target_str = "(" .. math.floor(self.stand_target.x) .. "," .. math.floor(self.stand_target.y) .. "," .. math.floor(self.stand_target.z) .. ")"
-        
-        core.log("action", "[mycraftcivi] Lumberjack #" .. (self._lumberjack_id or "?") .. 
-            " starting journey to standing spot " .. target_str .. " from feet at " .. pos_str)
-
         self.path_way = core.find_path(pos, self.stand_target, 100, 1, 3, "AStar")
 
         if self.path_way then
             self.greedy_timer = 0
-            core.log("action", "[mycraftcivi] Path found with " .. #self.path_way .. " nodes.")
         else
             self.target_failures = (self.target_failures or 0) + 1
             self.greedy_timer = 5.0
-            core.log("action", "[mycraftcivi] Path: FAILED (No path to target)")
         end
 
         -- Bei zu vielen Fehlschlägen Ziel blacklisten
@@ -634,20 +611,6 @@ local function lumberjack_search_logic(self, dtime, pos)
                                 self.stand_target = stand_spot
                                 self.path_timer = 3.1
                                 set_state(self, "Moving to chest at " .. core.pos_to_string(chest_pos))
-
-                                -- Partikel einzeichnen für den Standplatz (Gelb)
-                                core.add_particle({
-                                    pos = { x = stand_spot.x, y = stand_spot.y + 2, z = stand_spot.z },
-                                    velocity = { x = 0, y = 0, z = 0 },
-                                    acceleration = { x = 0, y = 0, z = 0 },
-                                    expirationtime = 15,
-                                    size = 4,
-                                    collisiondetection = false,
-                                    vertical = false,
-                                    texture = "heart.png^[colorize:#FFFF00:200",
-                                    glow = 14,
-                                })
-
                                 return true
                             else
                                 self.blacklist[hash] = core.get_gametime() + 60
@@ -667,22 +630,21 @@ local function lumberjack_search_logic(self, dtime, pos)
                     { "group:tree" }
                 )
 
-                local processed_nodes = {}
                 local roots = {}
                 local now = core.get_gametime()
                 for _, p in ipairs(found_nodes) do
-                    local node_hash = core.hash_node_position(p)
-                    if not processed_nodes[node_hash] then
-                        local tree_nodes, min_y_pos = get_connected_wood(p, 50)
-                        for _, tp in ipairs(tree_nodes) do
-                            processed_nodes[core.hash_node_position(tp)] = true
+                    local check_pos = vector.new(p)
+                    for i = 1, 30 do
+                        local under = { x = check_pos.x, y = check_pos.y - 1, z = check_pos.z }
+                        if core.get_item_group(core.get_node(under).name, "tree") > 0 then
+                            check_pos.y = check_pos.y - 1
+                        else
+                            break
                         end
-                        if min_y_pos then
-                            local root_hash = core.hash_node_position(min_y_pos)
-                            if not self.blacklist[root_hash] or self.blacklist[root_hash] < now then
-                                roots[root_hash] = min_y_pos
-                            end
-                        end
+                    end
+                    local hash = core.hash_node_position(check_pos)
+                    if not self.blacklist[hash] or self.blacklist[hash] < now then
+                        roots[hash] = check_pos
                     end
                 end
 
@@ -697,28 +659,6 @@ local function lumberjack_search_logic(self, dtime, pos)
                             self.target_tree = found_root
                             self.stand_target = stand_spot
                             self.path_timer = 3.1
-
-                            -- Partikel einzeichnen
-                            -- 1. Standplatz (Gelb)
-                            core.add_particle({
-                                pos = { x = stand_spot.x, y = stand_spot.y + 2, z = stand_spot.z },
-                                expirationtime = 15,
-                                size = 4,
-                                texture = "heart.png^[colorize:#FFFF00:200",
-                                glow = 14,
-                            })
-                            -- 2. Baumkrone (Grün)
-                            local _, _, top_pos = get_connected_wood(found_root, 50)
-                            if top_pos then
-                                core.add_particle({
-                                    pos = { x = top_pos.x, y = top_pos.y + 2, z = top_pos.z },
-                                    expirationtime = 15,
-                                    size = 4,
-                                    texture = "heart.png^[colorize:#00FF00:200",
-                                    glow = 14,
-                                })
-                            end
-
                             return true
                         else
                             self.blacklist[core.hash_node_position(found_root)] = core.get_gametime() + 300
@@ -763,7 +703,6 @@ mobs:register_mob("civi_npc:lumberjack", {
     pathfinding = 2,
     jump_height = 2.0,
     fear_height = 3,
-    stepheight = 1.1,
     can_leap = true,
     animation = {
         speed_normal = 30,
@@ -854,14 +793,14 @@ mobs:register_mob("civi_npc:lumberjack", {
 })
 
 -- Spawnen des Holzfällers auf Gras
-mobs:spawn({
+--[[ mobs:spawn({
     name = "civi_npc:lumberjack",
     nodes = { "default:dirt_with_grass" },
     min_light = 10,
     chance = 7000,
     active_object_count = 1,
     min_height = 0,
-})
+}) ]]
 
 -- Spawnegg registrieren
 mobs:register_egg("civi_npc:lumberjack", "Lumberjack (myCraftCivi)", "civi_lumberjack_spawner.png")
