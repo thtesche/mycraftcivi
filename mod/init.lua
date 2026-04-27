@@ -97,4 +97,63 @@ minetest.register_chatcommand("checkpile", {
     end,
 })
 
+minetest.register_chatcommand("checkwatermill", {
+    description = "Prüft, ob die Wassermühle korrekt vom Wasser angetrieben wird",
+    privs = { interact = true },
+    func = function(name, param)
+        local player = minetest.get_player_by_name(name)
+        local pos = vector.round(player:get_pos())
+
+        -- Wir suchen die Wassermühle im Umkreis
+        local start_pos = minetest.find_node_near(pos, 10, { "techage:ta1_watermill" })
+
+        if not start_pos then
+            return false, "Keine stehende Wassermühle (techage:ta1_watermill) im Umkreis von 10 Blöcken gefunden! (Wenn sie sich bereits dreht, funktioniert sie schon.)"
+        end
+
+        local meta = minetest.get_meta(start_pos)
+        local facedir = meta:get_int("facedir")
+        local check_dir = (facedir + 1) % 4
+        local dir = minetest.facedir_to_dir(check_dir)
+
+        local pos1 = vector.add(start_pos, dir)
+        pos1.y = pos1.y + 1
+
+        local pos2 = vector.subtract(start_pos, dir)
+        pos2.y = pos2.y + 1
+
+        local node1 = minetest.get_node(pos1)
+        local node2 = minetest.get_node(pos2)
+
+        local function is_water(n)
+            return n.name == "default:water_flowing" or n.name == "default:river_water_flowing"
+        end
+
+        minetest.chat_send_player(name, ">>> Analyse der Wassermühle bei " .. minetest.pos_to_string(start_pos))
+        minetest.chat_send_player(name, "Die Techage Wassermühle ist ein OBERschlächtiges Wasserrad.")
+        minetest.chat_send_player(name, "Das heißt: Das Wasser muss einen Block oberhalb und seitlich fließen, NICHT darunter!")
+        
+        local found = false
+        if is_water(node1) then
+            minetest.chat_send_player(name, "- Fließendes Wasser bei " .. minetest.pos_to_string(pos1) .. " gefunden! (Vorwärtsdrehung)")
+            found = true
+        else
+            minetest.chat_send_player(name, "- Erwarte fließendes Wasser bei " .. minetest.pos_to_string(pos1) .. " (Gefunden: " .. node1.name .. ")")
+        end
+
+        if is_water(node2) then
+            minetest.chat_send_player(name, "- Fließendes Wasser bei " .. minetest.pos_to_string(pos2) .. " gefunden! (Rückwärtsdrehung)")
+            found = true
+        else
+            minetest.chat_send_player(name, "- ODER Erwarte fließendes Wasser bei " .. minetest.pos_to_string(pos2) .. " (Gefunden: " .. node2.name .. ")")
+        end
+
+        if found then
+            return true, "Die Wassermühle wird mit Wasser versorgt und sollte sich drehen!"
+        else
+            return false, "Lösung: Setze eine Wasserquelle so, dass fließendes Wasser (water_flowing) an einer der oben genannten Positionen entsteht."
+        end
+    end,
+})
+
 core.log("action", "[mycraftcivi] Mod geladen!")
